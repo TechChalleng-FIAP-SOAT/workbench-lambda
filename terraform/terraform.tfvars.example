@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (or pass via CI) and fill in real values.
+# Do NOT commit real secrets.
+
+aws_region  = "us-east-1"
+environment = "develop"
+
+# O issuer resolve o cliente por REST no Customer Service (não lê mais o banco).
+# Use o DNS interno do serviço no cluster ou o endpoint do LoadBalancer interno.
+customer_service_url   = "http://customer-service.customer-service.svc.cluster.local:8080"
+vpc_subnet_ids         = ["subnet-aaaa", "subnet-bbbb"]
+vpc_security_group_ids = ["sg-aaaa"]
+
+# JWT — MUST be the exact same value as JWT_SECRET in workbench-monolith (min. 32 chars / 256 bits for HS256)
+jwt_secret        = "replace-with-the-shared-32char-minimum-hs256-secret"
+jwt_expiration_ms = 86400000
