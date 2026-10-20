@@ -1,11 +1,21 @@
 # workbench-lambda
 
-Serverless **CPF authentication** for the workbench-monolith platform (FIAP SOAT — Tech Challenge Fase 3).
+# workbench-lambda
+
+Serverless **CPF authentication** da plataforma **Workbench** (FIAP SOAT — Tech
+Challenge Fase 4). Microsserviço serverless que autentica o cliente por CPF e emite
+o JWT usado em toda a plataforma de microsserviços.
+
+> **Contexto (Fase 4):** na Fase 3 a autenticação servia o monólito e lia a tabela
+> `clients` direto no banco. Na Fase 4, com a refatoração em microsserviços e o
+> requisito de **isolamento de banco**, o issuer deixou de acessar banco e passou a
+> resolver o cliente **por REST no Customer Service** (`GET /api/clients/document/{cpf}`).
+> O token emitido é verificado por **todos os microsserviços** (mesmo `JWT_SECRET`).
 
 This repository contains the AWS Lambda functions and the Terraform/CI‑CD needed to:
 
 1. **Issue tokens** — validate a client's CPF, confirm the client exists and is **active** in the database, and return a signed **JWT**.
-2. **Authorize requests** — validate that JWT on protected API Gateway routes before traffic reaches the backend.
+2. **Authorize requests** — validate that JWT on protected API Gateway routes before traffic reaches the microservices.
 
 ---
 
@@ -32,7 +42,7 @@ Both sign/verify with the **same shared `JWT_SECRET`** (HS256), so tokens issued
 - **AWS Lambda** (functions) — provisioned with **Terraform**. The API Gateway that
   fronts these functions lives in the **`workbench-gateway`** repo and references
   them via `terraform_remote_state`.
-- **AWS Secrets Manager** — managed store for `JWT_SECRET` and DB credentials
+- **AWS Secrets Manager** — managed store for `JWT_SECRET` and the Customer Service URL
 - **GitHub Actions** — CI (test + `terraform validate`) and CD (`develop` and `main` both deploy)
 
 ---
@@ -48,7 +58,7 @@ flowchart LR
       authz[Lambda: Token Authorizer]
       sm[(Secrets Manager)]
       customer[Customer Service on Kubernetes]
-      backend[Backend API on Kubernetes]
+      services[Microsservicos on Kubernetes]
     end
 
     client -- "POST /auth {cpf}" --> apigw
@@ -59,7 +69,7 @@ flowchart LR
     client -- "ANY /* (Bearer JWT)" --> apigw
     apigw -- "validate token" --> authz
     authz -- "Allow / Deny" --> apigw
-    apigw -- "HTTP_PROXY (if allowed)" --> backend
+    apigw -- "HTTP_PROXY (if allowed)" --> services
 
     issuer -. reads .-> sm
     authz -. reads .-> sm
@@ -74,7 +84,7 @@ sequenceDiagram
     participant I as Auth Issuer (Lambda)
     participant D as Customer Service
     participant Z as Authorizer (Lambda)
-    participant B as Backend API
+    participant B as Microsserviços
 
     C->>G: POST /auth { cpf }
     G->>I: proxy event
@@ -152,7 +162,7 @@ The platform API collection lives in the main `workbench-monolith` repo under `b
 
 ## Deploy (Terraform)
 
-Prerequisites: an S3 bucket for remote state, a VPC with subnets/security groups that can reach the database, and the backend URL.
+Prerequisites: an S3 bucket for remote state and a VPC with subnets/security groups that can reach the **Customer Service** in-cluster.
 
 ```bash
 cd terraform
@@ -216,13 +226,14 @@ The token authorizer returns an Allow policy scoped to the whole API stage (`…
 rather than the single method ARN, so API Gateway can cache the authorizer result
 (`authorizer_result_ttl_in_seconds`) without denying every route after the first call.
 
-## Backend integration (required)
+## Integração com os microsserviços (required)
 
-A protected call only succeeds if **workbench-monolith** knows how to accept this token. The main
-app runs a filter that recognises the CPF token (subject = CPF/CNPJ, `clientId` claim, no
-`users` row), grants it `ROLE_CLIENT`, and resolves the client by document. Deploy a version
-of workbench-monolith that includes that change (`feature/cpf-auth-integration` or later) — see its
-`SecurityConfig` / `JwtFilter`.
+Uma chamada protegida só funciona se os **microsserviços** souberem aceitar este token.
+Cada serviço roda um filtro de segurança que reconhece o token de cliente (subject =
+CPF/CNPJ, claim `clientId`, sem linha em `users`), concede `ROLE_CLIENT` e resolve o
+cliente por documento. Todos os serviços compartilham o mesmo **`JWT_SECRET`** (HS256),
+então o token emitido aqui é verificável em qualquer um deles (ver `SecurityConfig` /
+`JwtFilter` de cada serviço).
 
 ## Notes
 
