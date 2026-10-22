@@ -54,6 +54,27 @@ public class JwtIssuer {
                 .compact();
     }
 
+    /**
+     * Emite um token de STAFF: subject = e-mail, roles = papéis do usuário
+     * (ADMIN/TECHNICIAN). Sem a claim {@code clientId} — é assim que os serviços
+     * distinguem staff de cliente (o JwtFilter do OS Service só aplica ROLE_CLIENT
+     * quando há clientId; caso contrário, usa as roles das claims).
+     *
+     * @param email subject do token (e-mail do usuário staff)
+     * @param roles papéis a incluir na claim {@code roles}
+     * @return JWT assinado
+     */
+    public String issueStaff(String email, java.util.Collection<String> roles) {
+        long now = System.currentTimeMillis();
+        return Jwts.builder()
+                .subject(email)
+                .claim("roles", java.util.List.copyOf(roles))
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + expirationMillis))
+                .signWith(key)
+                .compact();
+    }
+
     public long getExpirationMillis() {
         return expirationMillis;
     }

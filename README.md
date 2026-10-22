@@ -2,9 +2,9 @@
 
 # workbench-lambda
 
-Serverless **CPF authentication** da plataforma **Workbench** (FIAP SOAT — Tech
-Challenge Fase 4). Microsserviço serverless que autentica o cliente por CPF e emite
-o JWT usado em toda a plataforma de microsserviços.
+Serverless **authentication** da plataforma **Workbench** (FIAP SOAT — Tech
+Challenge Fase 4). Microsserviço serverless que autentica **clientes (por CPF)** e
+**staff (por e-mail/senha)** e emite o JWT usado em toda a plataforma de microsserviços.
 
 > **Contexto (Fase 4):** na Fase 3 a autenticação servia o monólito e lia a tabela
 > `clients` direto no banco. Na Fase 4, com a refatoração em microsserviços e o
@@ -23,7 +23,8 @@ This repository contains the AWS Lambda functions and the Terraform/CI‑CD need
 
 | Function | Handler | Role |
 |---|---|---|
-| **Auth issuer** | `com.workbench.workshop.auth.AuthHandler` | `POST /auth` — validates CPF, checks client status via the **Customer Service (REST)**, **issues** a JWT. Runs in the VPC to reach the in-cluster service. |
+| **Auth issuer (cliente)** | `com.workbench.workshop.auth.AuthHandler` | `POST /auth` — validates CPF, checks client status via the **Customer Service (REST)**, **issues** a client JWT (`roles:[CLIENT]`, claim `clientId`). Runs in the VPC. |
+| **Staff issuer** | `com.workbench.workshop.auth.StaffAuthHandler` | `POST /auth/login` — valida e-mail/senha no **Customer Service** (`POST /api/users/auth/validate`) e emite um JWT de **staff** (roles ADMIN/TECHNICIAN, **sem** `clientId`). Paridade com o login de staff do monólito. Roda na VPC. |
 | **Token authorizer** | `com.workbench.workshop.auth.TokenAuthorizerHandler` | API Gateway `TOKEN` authorizer — **validates** the JWT on protected routes. No DB access. |
 
 Both sign/verify with the **same shared `JWT_SECRET`** (HS256), so tokens issued here are verifiable across the platform.
@@ -147,9 +148,38 @@ The JWT payload:
 }
 ```
 
+### `POST /auth/login` (staff)
+
+Login de staff por e-mail/senha. A Lambda valida as credenciais no Customer Service
+(`POST /api/users/auth/validate`) e emite o JWT de staff.
+
+Request:
+
+```json
+{ "email": "admin@workbench.dev", "password": "admin123" }
+```
+
+Responses:
+
+| Status | Body | Meaning |
+|---|---|---|
+| `200` | `{ "token": "...", "expiresIn": 86400000, "email": "...", "roles": ["ADMIN"] }` | Autenticado |
+| `400` | `{ "error": "Email and password are required" }` | Campos ausentes |
+| `401` | `{ "error": "Invalid credentials" }` | E-mail/senha inválidos |
+| `500` | `{ "error": "Internal error" }` | Falha ao consultar o Customer Service |
+
+JWT de staff (note a ausência de `clientId` — é assim que os serviços distinguem
+staff de cliente):
+
+```json
+{ "sub": "admin@workbench.dev", "roles": ["ADMIN"], "iat": 1690000000, "exp": 1690086400 }
+```
+
 ### Postman / Bruno
 
-The platform API collection lives in the main `workbench-monolith` repo under `bruno/workbench-api` (`01 - Auth`). Point the `baseUrl` environment variable at the API Gateway stage URL (the `auth_endpoint` output of the **`workbench-gateway`** repo).
+Collection da plataforma (com login de cliente e de staff) em
+`workbench-technical-documentation/postman`. Aponte a `baseUrl` para a stage URL do
+API Gateway (output do repo **`workbench-gateway`**).
 
 ---
 
@@ -176,7 +206,8 @@ terraform init \
 terraform apply
 ```
 
-Key outputs: `issuer_invoke_arn`, `authorizer_invoke_arn` (consumed by the gateway repo).
+Key outputs: `issuer_invoke_arn`, `staff_issuer_invoke_arn`, `authorizer_invoke_arn`
+(consumed by the gateway repo).
 
 ### Environment variables consumed by the functions
 
@@ -239,4 +270,6 @@ então o token emitido aqui é verificável em qualquer um deles (ver `SecurityC
 
 - Remember to add the **`soat-architecture`** user to this repository (Tech Challenge delivery requirement).
 - Secrets are managed in AWS Secrets Manager and injected as Lambda environment variables so the function code stays runtime-agnostic; fetching them at runtime via the AWS SDK is a straightforward future hardening.
-- `iss` / `aud` claims are not stamped yet: tokens are distinguished from staff tokens by the `clientId` claim. Adding `iss`/`aud` is a low-effort hardening if the platform ever gains a third token issuer.
+- Client vs staff tokens are distinguished by the `clientId` claim: client tokens
+  carry it (and `roles:[CLIENT]`); staff tokens omit it and carry the real roles
+  (ADMIN/TECHNICIAN). `iss`/`aud` claims are not stamped yet — a low-effort hardening.

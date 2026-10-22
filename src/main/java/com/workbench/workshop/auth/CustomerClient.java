@@ -68,6 +68,47 @@ public class CustomerClient {
         }
     }
 
+    /**
+     * Valida credenciais de staff chamando {@code POST /api/users/auth/validate}.
+     * Retorna o e-mail + roles quando as credenciais conferem; vazio em 401
+     * (credenciais inválidas); exceção em falha de comunicação.
+     */
+    public Optional<StaffPrincipal> validateStaff(String email, String password) {
+        String body;
+        try {
+            body = MAPPER.writeValueAsString(new StaffCredentials(email, password));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new CustomerServiceException("Falha ao serializar credenciais", e);
+        }
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(baseUrl + "/api/users/auth/validate"))
+                .timeout(Duration.ofSeconds(5))
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            int status = response.statusCode();
+            if (status == 401) {
+                return Optional.empty();
+            }
+            if (status != 200) {
+                throw new CustomerServiceException("Customer Service respondeu HTTP " + status, null);
+            }
+            StaffPayload payload = MAPPER.readValue(response.body(), StaffPayload.class);
+            return Optional.of(new StaffPrincipal(payload.email(),
+                    payload.roles() == null ? java.util.Set.of() : payload.roles()));
+        } catch (CustomerServiceException e) {
+            throw e;
+        } catch (java.io.IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new CustomerServiceException("Falha ao validar staff no Customer Service", e);
+        }
+    }
+
     private static String stripTrailingSlash(String url) {
         if (url == null || url.isBlank()) {
             throw new IllegalStateException("CUSTOMER_SERVICE_URL vazio");
@@ -85,6 +126,15 @@ public class CustomerClient {
 
     /** Projeção do JSON do Customer Service (ignora campos extras). */
     private record CustomerPayload(long id, String name, boolean active) {}
+
+    /** Corpo enviado ao endpoint de validação de staff. */
+    private record StaffCredentials(String email, String password) {}
+
+    /** Projeção da resposta de validação de staff. */
+    private record StaffPayload(String email, java.util.Set<String> roles) {}
+
+    /** Staff autenticado (e-mail + roles) devolvido pela validação. */
+    public record StaffPrincipal(String email, java.util.Set<String> roles) {}
 
     /** Falha de comunicação com o Customer Service (mapeada a 500 pelo handler). */
     public static class CustomerServiceException extends RuntimeException {
