@@ -1,5 +1,6 @@
 locals {
   auth_function_name       = "${var.name_prefix}-issuer-${var.environment}"
+  staff_auth_function_name = "${var.name_prefix}-staff-issuer-${var.environment}"
   authorizer_function_name = "${var.name_prefix}-authorizer-${var.environment}"
 }
 
@@ -108,6 +109,38 @@ resource "aws_lambda_function" "issuer" {
   role             = aws_iam_role.issuer.arn
   runtime          = var.lambda_runtime
   handler          = "com.workbench.workshop.auth.AuthHandler::handleRequest"
+  filename         = var.lambda_jar_path
+  source_code_hash = filebase64sha256(var.lambda_jar_path)
+  memory_size      = var.lambda_memory_mb
+  timeout          = var.lambda_timeout_seconds
+
+  depends_on = [
+    aws_iam_role_policy_attachment.issuer_basic,
+    aws_iam_role_policy_attachment.issuer_vpc,
+    aws_iam_role_policy.issuer_secrets,
+  ]
+
+  vpc_config {
+    subnet_ids         = local.subnet_ids
+    security_group_ids = local.security_group_ids
+  }
+
+  environment {
+    variables = {
+      CUSTOMER_SERVICE_URL = var.customer_service_url
+      JWT_SECRET           = var.jwt_secret
+      JWT_EXPIRATION       = tostring(var.jwt_expiration_ms)
+    }
+  }
+}
+
+# Login de STAFF (e-mail/senha). Reaproveita a role do issuer (VPC + segredos),
+# pois também chama o Customer Service e assina o JWT com o JWT_SECRET.
+resource "aws_lambda_function" "staff_issuer" {
+  function_name    = local.staff_auth_function_name
+  role             = aws_iam_role.issuer.arn
+  runtime          = var.lambda_runtime
+  handler          = "com.workbench.workshop.auth.StaffAuthHandler::handleRequest"
   filename         = var.lambda_jar_path
   source_code_hash = filebase64sha256(var.lambda_jar_path)
   memory_size      = var.lambda_memory_mb

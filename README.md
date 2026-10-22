@@ -1,11 +1,21 @@
 # workbench-lambda
 
-Serverless **CPF authentication** for the workbench-monolith platform (FIAP SOAT — Tech Challenge Fase 3).
+# workbench-lambda
+
+Serverless **authentication** da plataforma **Workbench** (FIAP SOAT — Tech
+Challenge Fase 4). Microsserviço serverless que autentica **clientes (por CPF)** e
+**staff (por e-mail/senha)** e emite o JWT usado em toda a plataforma de microsserviços.
+
+> **Contexto (Fase 4):** na Fase 3 a autenticação servia o monólito e lia a tabela
+> `clients` direto no banco. Na Fase 4, com a refatoração em microsserviços e o
+> requisito de **isolamento de banco**, o issuer deixou de acessar banco e passou a
+> resolver o cliente **por REST no Customer Service** (`GET /api/clients/document/{cpf}`).
+> O token emitido é verificado por **todos os microsserviços** (mesmo `JWT_SECRET`).
 
 This repository contains the AWS Lambda functions and the Terraform/CI‑CD needed to:
 
 1. **Issue tokens** — validate a client's CPF, confirm the client exists and is **active** in the database, and return a signed **JWT**.
-2. **Authorize requests** — validate that JWT on protected API Gateway routes before traffic reaches the backend.
+2. **Authorize requests** — validate that JWT on protected API Gateway routes before traffic reaches the microservices.
 
 ---
 
@@ -13,7 +23,8 @@ This repository contains the AWS Lambda functions and the Terraform/CI‑CD need
 
 | Function | Handler | Role |
 |---|---|---|
-| **Auth issuer** | `com.workbench.workshop.auth.AuthHandler` | `POST /auth` — validates CPF, checks client status via the **Customer Service (REST)**, **issues** a JWT. Runs in the VPC to reach the in-cluster service. |
+| **Auth issuer (cliente)** | `com.workbench.workshop.auth.AuthHandler` | `POST /auth` — validates CPF, checks client status via the **Customer Service (REST)**, **issues** a client JWT (`roles:[CLIENT]`, claim `clientId`). Runs in the VPC. |
+| **Staff issuer** | `com.workbench.workshop.auth.StaffAuthHandler` | `POST /auth/login` — valida e-mail/senha no **Customer Service** (`POST /api/users/auth/validate`) e emite um JWT de **staff** (roles ADMIN/TECHNICIAN, **sem** `clientId`). Paridade com o login de staff do monólito. Roda na VPC. |
 | **Token authorizer** | `com.workbench.workshop.auth.TokenAuthorizerHandler` | API Gateway `TOKEN` authorizer — **validates** the JWT on protected routes. No DB access. |
 
 Both sign/verify with the **same shared `JWT_SECRET`** (HS256), so tokens issued here are verifiable across the platform.
@@ -32,7 +43,7 @@ Both sign/verify with the **same shared `JWT_SECRET`** (HS256), so tokens issued
 - **AWS Lambda** (functions) — provisioned with **Terraform**. The API Gateway that
   fronts these functions lives in the **`workbench-gateway`** repo and references
   them via `terraform_remote_state`.
-- **AWS Secrets Manager** — managed store for `JWT_SECRET` and DB credentials
+- **AWS Secrets Manager** — managed store for `JWT_SECRET` and the Customer Service URL
 - **GitHub Actions** — CI (test + `terraform validate`) and CD (`develop` and `main` both deploy)
 
 ---
@@ -48,7 +59,7 @@ flowchart LR
       authz[Lambda: Token Authorizer]
       sm[(Secrets Manager)]
       customer[Customer Service on Kubernetes]
-      backend[Backend API on Kubernetes]
+      services[Microsservicos on Kubernetes]
     end
 
     client -- "POST /auth {cpf}" --> apigw
@@ -59,7 +70,7 @@ flowchart LR
     client -- "ANY /* (Bearer JWT)" --> apigw
     apigw -- "validate token" --> authz
     authz -- "Allow / Deny" --> apigw
-    apigw -- "HTTP_PROXY (if allowed)" --> backend
+    apigw -- "HTTP_PROXY (if allowed)" --> services
 
     issuer -. reads .-> sm
     authz -. reads .-> sm
@@ -74,7 +85,7 @@ sequenceDiagram
     participant I as Auth Issuer (Lambda)
     participant D as Customer Service
     participant Z as Authorizer (Lambda)
-    participant B as Backend API
+    participant B as Microsserviços
 
     C->>G: POST /auth { cpf }
     G->>I: proxy event
@@ -137,9 +148,38 @@ The JWT payload:
 }
 ```
 
+### `POST /auth/login` (staff)
+
+Login de staff por e-mail/senha. A Lambda valida as credenciais no Customer Service
+(`POST /api/users/auth/validate`) e emite o JWT de staff.
+
+Request:
+
+```json
+{ "email": "admin@workbench.dev", "password": "admin123" }
+```
+
+Responses:
+
+| Status | Body | Meaning |
+|---|---|---|
+| `200` | `{ "token": "...", "expiresIn": 86400000, "email": "...", "roles": ["ADMIN"] }` | Autenticado |
+| `400` | `{ "error": "Email and password are required" }` | Campos ausentes |
+| `401` | `{ "error": "Invalid credentials" }` | E-mail/senha inválidos |
+| `500` | `{ "error": "Internal error" }` | Falha ao consultar o Customer Service |
+
+JWT de staff (note a ausência de `clientId` — é assim que os serviços distinguem
+staff de cliente):
+
+```json
+{ "sub": "admin@workbench.dev", "roles": ["ADMIN"], "iat": 1690000000, "exp": 1690086400 }
+```
+
 ### Postman / Bruno
 
-The platform API collection lives in the main `workbench-monolith` repo under `bruno/workbench-api` (`01 - Auth`). Point the `baseUrl` environment variable at the API Gateway stage URL (the `auth_endpoint` output of the **`workbench-gateway`** repo).
+Collection da plataforma (com login de cliente e de staff) em
+`workbench-technical-documentation/postman`. Aponte a `baseUrl` para a stage URL do
+API Gateway (output do repo **`workbench-gateway`**).
 
 ---
 
@@ -152,7 +192,7 @@ The platform API collection lives in the main `workbench-monolith` repo under `b
 
 ## Deploy (Terraform)
 
-Prerequisites: an S3 bucket for remote state, a VPC with subnets/security groups that can reach the database, and the backend URL.
+Prerequisites: an S3 bucket for remote state and a VPC with subnets/security groups that can reach the **Customer Service** in-cluster.
 
 ```bash
 cd terraform
@@ -166,7 +206,8 @@ terraform init \
 terraform apply
 ```
 
-Key outputs: `issuer_invoke_arn`, `authorizer_invoke_arn` (consumed by the gateway repo).
+Key outputs: `issuer_invoke_arn`, `staff_issuer_invoke_arn`, `authorizer_invoke_arn`
+(consumed by the gateway repo).
 
 ### Environment variables consumed by the functions
 
@@ -216,16 +257,19 @@ The token authorizer returns an Allow policy scoped to the whole API stage (`…
 rather than the single method ARN, so API Gateway can cache the authorizer result
 (`authorizer_result_ttl_in_seconds`) without denying every route after the first call.
 
-## Backend integration (required)
+## Integração com os microsserviços (required)
 
-A protected call only succeeds if **workbench-monolith** knows how to accept this token. The main
-app runs a filter that recognises the CPF token (subject = CPF/CNPJ, `clientId` claim, no
-`users` row), grants it `ROLE_CLIENT`, and resolves the client by document. Deploy a version
-of workbench-monolith that includes that change (`feature/cpf-auth-integration` or later) — see its
-`SecurityConfig` / `JwtFilter`.
+Uma chamada protegida só funciona se os **microsserviços** souberem aceitar este token.
+Cada serviço roda um filtro de segurança que reconhece o token de cliente (subject =
+CPF/CNPJ, claim `clientId`, sem linha em `users`), concede `ROLE_CLIENT` e resolve o
+cliente por documento. Todos os serviços compartilham o mesmo **`JWT_SECRET`** (HS256),
+então o token emitido aqui é verificável em qualquer um deles (ver `SecurityConfig` /
+`JwtFilter` de cada serviço).
 
 ## Notes
 
 - Remember to add the **`soat-architecture`** user to this repository (Tech Challenge delivery requirement).
 - Secrets are managed in AWS Secrets Manager and injected as Lambda environment variables so the function code stays runtime-agnostic; fetching them at runtime via the AWS SDK is a straightforward future hardening.
-- `iss` / `aud` claims are not stamped yet: tokens are distinguished from staff tokens by the `clientId` claim. Adding `iss`/`aud` is a low-effort hardening if the platform ever gains a third token issuer.
+- Client vs staff tokens are distinguished by the `clientId` claim: client tokens
+  carry it (and `roles:[CLIENT]`); staff tokens omit it and carry the real roles
+  (ADMIN/TECHNICIAN). `iss`/`aud` claims are not stamped yet — a low-effort hardening.
