@@ -11,7 +11,7 @@ import java.util.Optional;
 
 /**
  * Resolve o cliente pelo documento (CPF) chamando o <b>Customer Service</b> por REST,
- * em vez de ler a tabela {@code clients} diretamente (ADR-0003: nenhum serviço acessa
+ * em vez de ler a tabela {@code clients} diretamente (ADR-0006: nenhum serviço acessa
  * o banco de outro). Os clientes foram extraídos para o Customer Service na Etapa 6.
  *
  * <p>Contrato consumido: {@code GET /api/clients/document/{document}} →

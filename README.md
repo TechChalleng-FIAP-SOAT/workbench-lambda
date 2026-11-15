@@ -39,7 +39,7 @@ Both sign/verify with the **same shared `JWT_SECRET`** (HS256), so tokens issued
 - **jjwt 0.13.0** (HS256) — same library/version as the main app
 - **Customer Service (REST)** — client lookup via `GET /api/clients/document/{cpf}`
   (the clients table moved to the Customer Service in Fase 4, Etapa 6; the Lambda
-  no longer touches any database — ADR-0003)
+  no longer touches any database — ADR-0006)
 - **AWS Lambda** (functions) — provisioned with **Terraform**. The API Gateway that
   fronts these functions lives in the **`workbench-gateway`** repo and references
   them via `terraform_remote_state`.
@@ -165,8 +165,11 @@ Responses:
 |---|---|---|
 | `200` | `{ "token": "...", "expiresIn": 86400000, "email": "...", "roles": ["ADMIN"] }` | Autenticado |
 | `400` | `{ "error": "Email and password are required" }` | Campos ausentes |
-| `401` | `{ "error": "Invalid credentials" }` | E-mail/senha inválidos |
+| `401` | `{ "error": "Invalid credentials" }` | E-mail/senha inválidos — ou e-mail bloqueado após 5 erros seguidos (15 min; o Customer Service não diferencia) |
 | `500` | `{ "error": "Internal error" }` | Falha ao consultar o Customer Service |
+
+> `admin123` é a senha do admin semeado **enquanto** o secret `ADMIN_INITIAL_PASSWORD` do
+> customer-service não estiver definido; com ele, a senha passa a ser a do secret.
 
 JWT de staff (note a ausência de `clientId` — é assim que os serviços distinguem
 staff de cliente):
@@ -234,14 +237,14 @@ an internal LoadBalancer). The authorizer needs no VPC (it only verifies JWTs).
 
 ### Required GitHub configuration (reused from workbench-monolith)
 
-Repo **variables**: `TF_STATE_BUCKET`, `AWS_REGION`.
+**Variable** (org/repo): `AWS_REGION`.
 
-Repo **secrets**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `JWT_SECRET`,
-`CUSTOMER_SERVICE_URL_DEVELOP`/`CUSTOMER_SERVICE_URL_MAIN`,
-`SUBNET_IDS_*`, `VPC_SECURITY_GROUP_IDS_*`.
+**Secrets** (organization-level, suffixed by branch — the branch is the environment):
+`AWS_ACCESS_KEY_ID_<ENV>`, `AWS_SECRET_ACCESS_KEY_<ENV>`, `AWS_ACCOUNT_ID_<ENV>`,
+`TF_STATE_BUCKET_<ENV>`, `CUSTOMER_SERVICE_URL_<ENV>`, `SUBNET_IDS_<ENV>`,
+`VPC_SECURITY_GROUP_IDS_<ENV>`, plus `JWT_SECRET` (no suffix, shared by every service).
 
-> `JWT_SECRET`, `TF_STATE_BUCKET`, `AWS_REGION` and the AWS keys use the **same
-> names and values** as workbench-monolith — reuse them. The database secrets
+> `JWT_SECRET` must be the **same value** used by all microservices. The database secrets
 > (`DB_*`) are **no longer needed**: the issuer resolves the client via the Customer
 > Service REST API. The backend URL (`ORIGIN_URL`) lives in the **`workbench-gateway`** repo.
 
