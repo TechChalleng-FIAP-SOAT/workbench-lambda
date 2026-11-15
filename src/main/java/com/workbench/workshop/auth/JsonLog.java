@@ -36,6 +36,18 @@ final class JsonLog {
                 + digits.substring(digits.length() - 2);
     }
 
+    /** Masks an e-mail for the logs: {@code maria.silva@oficina.com -> m***@oficina.com}. */
+    static String maskEmail(String email) {
+        if (email == null) {
+            return "***";
+        }
+        int at = email.indexOf('@');
+        if (at < 1) {
+            return "***";
+        }
+        return email.charAt(0) + "***" + email.substring(at);
+    }
+
     private static void write(Context context, String level, String event, Map<String, Object> fields) {
         Map<String, Object> line = new LinkedHashMap<>();
         line.put("level", level);

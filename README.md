@@ -91,10 +91,8 @@ sequenceDiagram
     G->>I: proxy event
     I->>I: validate CPF (check digits)
     I->>D: GET /api/clients/document/{cpf}
-    alt 404 not found
-        I-->>C: 404 Client not found
-    else inactive
-        I-->>C: 403 Client is inactive
+    alt not found or inactive
+        I-->>C: 401 CPF not authorized
     else valid & active
         I-->>C: 200 { token, expiresIn, client }
     end
@@ -132,8 +130,7 @@ Responses:
 |---|---|---|
 | `200` | `{ "token": "...", "expiresIn": 86400000, "client": { "id": 1, "name": "JOAO DA SILVA" } }` | Authenticated |
 | `400` | `{ "error": "Invalid CPF" }` / `{ "error": "CPF is required" }` | Bad/missing CPF |
-| `404` | `{ "error": "Client not found" }` | No client with that document |
-| `403` | `{ "error": "Client is inactive" }` | Client exists but is deactivated |
+| `401` | `{ "error": "CPF not authorized" }` | No client with that document **or** client deactivated — the same answer on purpose, so the endpoint does not reveal which CPFs are registered (the real reason goes to the log, with the CPF masked) |
 
 The JWT payload:
 
@@ -230,10 +227,14 @@ Key outputs: `issuer_invoke_arn`, `staff_issuer_invoke_arn`, `authorizer_invoke_
 
 ### Network
 
-The issuer runs inside the VPC (subnets + security group passed as explicit inputs)
-so it can reach the **Customer Service** running in the EKS cluster. The security
-group must allow egress to the Customer Service endpoint (in-cluster Service DNS or
-an internal LoadBalancer). The authorizer needs no VPC (it only verifies JWTs).
+The issuers run inside the VPC (subnets + security group passed as explicit inputs)
+so they can reach the **Customer Service** through its **internal NLB**
+(`CUSTOMER_SERVICE_URL = http://<internal-nlb-dns>:8080`; the in-cluster
+`*.svc.cluster.local` DNS does not resolve outside the cluster). The security group must
+allow egress to it. The staff issuer sends e-mail and password over that URL, so Terraform
+only accepts `https://` or the internal NLB with `customer_service_url_internal = true`
+(the CD sets it). The authorizer needs no VPC (it only verifies JWTs). Logs never carry a
+full CPF or staff e-mail (`529******25`, `m***@oficina.com`).
 
 ### Required GitHub configuration (reused from workbench-monolith)
 

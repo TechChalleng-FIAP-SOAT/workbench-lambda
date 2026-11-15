@@ -48,8 +48,19 @@ variable "lambda_timeout_seconds" {
 # --- Customer Service (CPF lookup via REST) ------------------------------
 
 variable "customer_service_url" {
-  description = "Base URL of the Customer Service (ex.: http://customer-service.customer-service.svc.cluster.local:8080 ou o DNS do LB interno)."
+  description = "Base URL do Customer Service. Use https:// ou o NLB INTERNO do customer-service (http://<dns-do-nlb-interno>:8080, só alcançável dentro da VPC). O DNS *.svc.cluster.local não resolve fora do cluster."
   type        = string
+
+  validation {
+    condition     = can(regex("^https?://[^/]+", var.customer_service_url))
+    error_message = "customer_service_url deve ser uma URL absoluta http:// ou https://."
+  }
+}
+
+variable "customer_service_url_internal" {
+  description = "true quando customer_service_url é o NLB interno (tráfego só dentro da VPC). Com false, só https:// é aceito: a Lambda de staff envia e-mail e senha por essa URL."
+  type        = bool
+  default     = false
 }
 
 # --- JWT ------------------------------------------------------------------

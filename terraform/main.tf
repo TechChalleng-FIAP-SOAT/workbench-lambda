@@ -164,6 +164,14 @@ resource "aws_lambda_function" "staff_issuer" {
       JWT_EXPIRATION       = tostring(var.jwt_expiration_ms)
     }
   }
+
+  lifecycle {
+    # A senha do staff nunca trafega em claro fora da VPC.
+    precondition {
+      condition     = startswith(var.customer_service_url, "https://") || var.customer_service_url_internal
+      error_message = "customer_service_url precisa ser https://, ou o NLB interno do customer-service com customer_service_url_internal = true."
+    }
+  }
 }
 
 resource "aws_lambda_function" "authorizer" {

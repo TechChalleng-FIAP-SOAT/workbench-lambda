@@ -15,13 +15,16 @@ import java.util.Optional;
  * Flow:
  *   1. Parse CPF from the request body.
  *   2. Validate the CPF (400 on invalid).
- *   3. Look up the client by document (404 when not found).
- *   4. Reject inactive clients (403).
+ *   3. Look up the client by document.
+ *   4. Unknown or inactive client: the same 401, so the response does not reveal which
+ *      CPFs are registered (the reason goes only to the log, with the CPF masked).
  *   5. Issue and return a JWT (200).
  */
 public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** Same answer for unknown and inactive clients (no CPF enumeration). */
+    private static final String NOT_AUTHORIZED = "CPF not authorized";
 
     private final CustomerClient customerClient;
     private final JwtIssuer jwtIssuer;
@@ -67,13 +70,13 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
         }
 
         if (found.isEmpty()) {
-            return denied(context, 404, "Client not found", "client_not_found",
+            return denied(context, 401, NOT_AUTHORIZED, "client_not_found",
                     JsonLog.maskDocument(cpf.getValue()));
         }
 
         Client client = found.get();
         if (!client.active()) {
-            return denied(context, 403, "Client is inactive", "client_inactive",
+            return denied(context, 401, NOT_AUTHORIZED, "client_inactive",
                     JsonLog.maskDocument(cpf.getValue()));
         }
 

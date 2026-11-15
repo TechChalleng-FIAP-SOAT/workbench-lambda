@@ -70,7 +70,7 @@ public class StaffAuthHandler implements RequestHandler<APIGatewayProxyRequestEv
 
         CustomerClient.StaffPrincipal staff = principal.get();
         String token = jwtIssuer.issueStaff(staff.email(), staff.roles());
-        JsonLog.info(context, "staff.auth.issued", Map.of("email", staff.email(), "status", 200));
+        JsonLog.info(context, "staff.auth.issued", Map.of("email", JsonLog.maskEmail(staff.email()), "status", 200));
         return json(200, new StaffAuthResponse(token, jwtIssuer.getExpirationMillis(),
                 staff.email(), staff.roles()));
     }

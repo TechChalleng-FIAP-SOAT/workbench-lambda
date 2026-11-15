@@ -5,8 +5,9 @@ aws_region  = "us-east-1"
 environment = "develop"
 
 # O issuer resolve o cliente por REST no Customer Service (não lê mais o banco).
-# Use o DNS interno do serviço no cluster ou o endpoint do LoadBalancer interno.
-customer_service_url   = "http://customer-service.customer-service.svc.cluster.local:8080"
+# Use o DNS do NLB interno do customer-service (o *.svc.cluster.local não resolve fora do cluster).
+customer_service_url          = "http://<dns-do-nlb-interno-do-customer>:8080"
+customer_service_url_internal = true
 vpc_subnet_ids         = ["subnet-aaaa", "subnet-bbbb"]
 vpc_security_group_ids = ["sg-aaaa"]
 

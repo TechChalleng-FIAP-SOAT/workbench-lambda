@@ -20,6 +20,8 @@ jobs:
       TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
       # O issuer resolve o cliente por REST no Customer Service (não lê mais o banco).
       TF_VAR_customer_service_url: ${{ github.ref_name == 'main' && secrets.CUSTOMER_SERVICE_URL_MAIN || secrets.CUSTOMER_SERVICE_URL_DEVELOP }}
+      # A URL é o NLB interno do customer-service (k8s/app.yaml): tráfego só dentro da VPC.
+      TF_VAR_customer_service_url_internal: "true"
       # Branch-specific secrets must be JSON/HCL lists, e.g. ["subnet-aaa", "subnet-bbb"] and ["sg-aaa"].
       TF_VAR_vpc_subnet_ids: ${{ github.ref_name == 'main' && secrets.SUBNET_IDS_MAIN || secrets.SUBNET_IDS_DEVELOP }}
       TF_VAR_vpc_security_group_ids: ${{ github.ref_name == 'main' && secrets.VPC_SECURITY_GROUP_IDS_MAIN || secrets.VPC_SECURITY_GROUP_IDS_DEVELOP }}
