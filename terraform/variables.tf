@@ -65,10 +65,15 @@ variable "customer_service_url_internal" {
 
 # --- JWT ------------------------------------------------------------------
 
-variable "jwt_secret" {
-  description = "Shared HMAC secret used to sign and verify JWTs. Must match the platform value."
+variable "jwt_private_key" {
+  description = "Chave PRIVADA RSA (PKCS#8, Base64 do DER) que assina os JWTs (RS256). Só os emissores a recebem."
   type        = string
   sensitive   = true
+}
+
+variable "jwt_public_key" {
+  description = "Chave PÚBLICA RSA (X.509, Base64 do DER) do par acima. O authorizer e os microsserviços verificam com ela."
+  type        = string
 }
 
 variable "jwt_expiration_ms" {

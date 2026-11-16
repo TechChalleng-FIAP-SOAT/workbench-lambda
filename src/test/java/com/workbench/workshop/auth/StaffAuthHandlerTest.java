@@ -21,7 +21,7 @@ class StaffAuthHandlerTest {
     @BeforeEach
     void setUp() {
         customerClient = mock(CustomerClient.class);
-        JwtIssuer issuer = new JwtIssuer("test-secret-that-is-long-enough-for-hs256-signing!!", 86_400_000L);
+        JwtIssuer issuer = new JwtIssuer(TestRsa.PLATFORM.getPrivate(), 86_400_000L);
         handler = new StaffAuthHandler(customerClient, issuer);
     }
 

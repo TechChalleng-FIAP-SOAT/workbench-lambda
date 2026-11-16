@@ -11,6 +11,8 @@ customer_service_url_internal = true
 vpc_subnet_ids         = ["subnet-aaaa", "subnet-bbbb"]
 vpc_security_group_ids = ["sg-aaaa"]
 
-# JWT — MUST be the exact same value as JWT_SECRET in workbench-monolith (min. 32 chars / 256 bits for HS256)
-jwt_secret        = "replace-with-the-shared-32char-minimum-hs256-secret"
+# JWT (RS256): a chave pública tem de ser a mesma JWT_PUBLIC_KEY dos microsserviços.
+# Par RSA (Base64 do DER, numa linha). Gerar: ver o guia de deploy (FASE 2).
+jwt_private_key   = "<chave privada PKCS#8 em Base64>"
+jwt_public_key    = "<chave pública X.509 em Base64>"
 jwt_expiration_ms = 86400000

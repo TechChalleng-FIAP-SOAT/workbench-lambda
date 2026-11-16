@@ -17,7 +17,8 @@ jobs:
       # Environment is the branch name: develop or main.
       TF_VAR_environment: ${{ github.ref_name }}
       # Repo-scoped secrets (per GitHub Environment: develop/main).
-      TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+      TF_VAR_jwt_private_key: ${{ secrets.JWT_PRIVATE_KEY }}
+      TF_VAR_jwt_public_key: ${{ secrets.JWT_PUBLIC_KEY }}
       # O issuer resolve o cliente por REST no Customer Service (não lê mais o banco).
       TF_VAR_customer_service_url: ${{ github.ref_name == 'main' && secrets.CUSTOMER_SERVICE_URL_MAIN || secrets.CUSTOMER_SERVICE_URL_DEVELOP }}
       # A URL é o NLB interno do customer-service (k8s/app.yaml): tráfego só dentro da VPC.
@@ -48,6 +49,8 @@ jobs:
           test -n "${TF_VAR_customer_service_url}" || { echo "::error::Missing CUSTOMER_SERVICE_URL secret."; exit 1; }
           test -n "${TF_VAR_vpc_subnet_ids}" || { echo "::error::Missing VPC_SUBNET_IDS secret."; exit 1; }
           test -n "${TF_VAR_vpc_security_group_ids}" || { echo "::error::Missing VPC_SECURITY_GROUP_IDS secret."; exit 1; }
+          test -n "${TF_VAR_jwt_private_key}" || { echo "::error::Missing JWT_PRIVATE_KEY secret (chave privada RSA que assina os tokens)."; exit 1; }
+          test -n "${TF_VAR_jwt_public_key}" || { echo "::error::Missing JWT_PUBLIC_KEY secret (chave pública RSA)."; exit 1; }
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

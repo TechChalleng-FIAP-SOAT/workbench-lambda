@@ -10,7 +10,7 @@ Challenge Fase 4). Microsserviço serverless que autentica **clientes (por CPF)*
 > `clients` direto no banco. Na Fase 4, com a refatoração em microsserviços e o
 > requisito de **isolamento de banco**, o issuer deixou de acessar banco e passou a
 > resolver o cliente **por REST no Customer Service** (`GET /api/clients/document/{cpf}`).
-> O token emitido é verificado por **todos os microsserviços** (mesmo `JWT_SECRET`).
+> O token emitido (RS256, `kid=workbench-auth`) é verificado por **todos os microsserviços** com a chave pública (`JWT_PUBLIC_KEY`).
 
 This repository contains the AWS Lambda functions and the Terraform/CI‑CD needed to:
 
@@ -27,7 +27,7 @@ This repository contains the AWS Lambda functions and the Terraform/CI‑CD need
 | **Staff issuer** | `com.workbench.workshop.auth.StaffAuthHandler` | `POST /auth/login` — valida e-mail/senha no **Customer Service** (`POST /api/users/auth/validate`) e emite um JWT de **staff** (roles ADMIN/TECHNICIAN, **sem** `clientId`). Paridade com o login de staff do monólito. Roda na VPC. |
 | **Token authorizer** | `com.workbench.workshop.auth.TokenAuthorizerHandler` | API Gateway `TOKEN` authorizer — **validates** the JWT on protected routes. No DB access. |
 
-Both sign/verify with the **same shared `JWT_SECRET`** (HS256), so tokens issued here are verifiable across the platform.
+Tokens are **RS256**: the issuers sign with the private key (`JWT_PRIVATE_KEY`, only here) and the authorizer and microservices verify with the public key (`JWT_PUBLIC_KEY`) — they cannot mint tokens.
 
 > The issuer only *issues*; the authorizer only *validates*. A client authenticates once at `/auth`, then sends `Authorization: Bearer <token>` on every protected call.
 
@@ -36,14 +36,14 @@ Both sign/verify with the **same shared `JWT_SECRET`** (HS256), so tokens issued
 ## Technologies
 
 - **Java 21**, Maven (fat jar via `maven-shade-plugin`)
-- **jjwt 0.13.0** (HS256) — same library/version as the main app
+- **jjwt 0.13.0** (RS256) — same library/version as the microservices
 - **Customer Service (REST)** — client lookup via `GET /api/clients/document/{cpf}`
   (the clients table moved to the Customer Service in Fase 4, Etapa 6; the Lambda
   no longer touches any database — ADR-0006)
 - **AWS Lambda** (functions) — provisioned with **Terraform**. The API Gateway that
   fronts these functions lives in the **`workbench-gateway`** repo and references
   them via `terraform_remote_state`.
-- **AWS Secrets Manager** — managed store for `JWT_SECRET` and the Customer Service URL
+- **AWS Secrets Manager** — managed store for the JWT private key and the Customer Service URL
 - **GitHub Actions** — CI (test + `terraform validate`) and CD (`develop` and `main` both deploy)
 
 ---
@@ -214,7 +214,8 @@ Key outputs: `issuer_invoke_arn`, `staff_issuer_invoke_arn`, `authorizer_invoke_
 | Variable | Function | Purpose |
 |---|---|---|
 | `CUSTOMER_SERVICE_URL` | issuer | base URL of the Customer Service (CPF lookup via REST) |
-| `JWT_SECRET` | issuer + authorizer | HS256 sign/verify (shared) |
+| `JWT_PRIVATE_KEY` | issuers (client + staff) | RS256 private key that signs the tokens |
+| `JWT_PUBLIC_KEY` | authorizer | RS256 public key that verifies them |
 | `JWT_EXPIRATION` | issuer | token lifetime (ms, default 86400000) |
 
 ---
@@ -243,9 +244,9 @@ full CPF or staff e-mail (`529******25`, `m***@oficina.com`).
 **Secrets** (organization-level, suffixed by branch — the branch is the environment):
 `AWS_ACCESS_KEY_ID_<ENV>`, `AWS_SECRET_ACCESS_KEY_<ENV>`, `AWS_ACCOUNT_ID_<ENV>`,
 `TF_STATE_BUCKET_<ENV>`, `CUSTOMER_SERVICE_URL_<ENV>`, `SUBNET_IDS_<ENV>`,
-`VPC_SECURITY_GROUP_IDS_<ENV>`, plus `JWT_SECRET` (no suffix, shared by every service).
+`VPC_SECURITY_GROUP_IDS_<ENV>`, plus `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` (no suffix; restrict the private key secret to this repository).
 
-> `JWT_SECRET` must be the **same value** used by all microservices. The database secrets
+> `JWT_PUBLIC_KEY` must be the **same value** used by all microservices. The database secrets
 > (`DB_*`) are **no longer needed**: the issuer resolves the client via the Customer
 > Service REST API. The backend URL (`ORIGIN_URL`) lives in the **`workbench-gateway`** repo.
 
@@ -266,7 +267,7 @@ rather than the single method ARN, so API Gateway can cache the authorizer resul
 Uma chamada protegida só funciona se os **microsserviços** souberem aceitar este token.
 Cada serviço roda um filtro de segurança que reconhece o token de cliente (subject =
 CPF/CNPJ, claim `clientId`, sem linha em `users`), concede `ROLE_CLIENT` e resolve o
-cliente por documento. Todos os serviços compartilham o mesmo **`JWT_SECRET`** (HS256),
+cliente por documento. Os serviços só têm a chave **pública** (RS256),
 então o token emitido aqui é verificável em qualquer um deles (ver `SecurityConfig` /
 `JwtFilter` de cada serviço).
 
