@@ -10,7 +10,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TokenAuthorizerHandlerTest {
 
-    private static final String SECRET = "test-secret-that-is-long-enough-for-hs256-signing!!";
     private static final String METHOD_ARN =
             "arn:aws:execute-api:us-east-1:123456789012:abc123/prod/GET/orders";
 
@@ -19,8 +18,8 @@ class TokenAuthorizerHandlerTest {
 
     @BeforeEach
     void setUp() {
-        issuer = new JwtIssuer(SECRET, 86_400_000L);
-        handler = new TokenAuthorizerHandler(new JwtVerifier(SECRET));
+        issuer = new JwtIssuer(TestRsa.PLATFORM.getPrivate(), 86_400_000L);
+        handler = new TokenAuthorizerHandler(new JwtVerifier(TestRsa.PLATFORM.getPublic()));
     }
 
     private IamPolicyResponse invoke(String authorizationToken) {
@@ -69,8 +68,8 @@ class TokenAuthorizerHandlerTest {
     }
 
     @Test
-    void rejectsTokenSignedWithDifferentSecret() {
-        String foreign = new JwtIssuer("a-completely-different-secret-value-still-long!!", 86_400_000L)
+    void rejectsTokenSignedWithAnotherKey() {
+        String foreign = new JwtIssuer(TestRsa.FOREIGN.getPrivate(), 86_400_000L)
                 .issue("52998224725", new Client(7L, "JOAO", true));
 
         assertThatThrownBy(() -> invoke("Bearer " + foreign))
@@ -80,10 +79,25 @@ class TokenAuthorizerHandlerTest {
 
     @Test
     void rejectsExpiredToken() {
-        String expired = new JwtIssuer(SECRET, -1000L)
+        String expired = new JwtIssuer(TestRsa.PLATFORM.getPrivate(), -1000L)
                 .issue("52998224725", new Client(7L, "JOAO", true));
 
         assertThatThrownBy(() -> invoke("Bearer " + expired))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("Unauthorized");
+    }
+
+    @Test
+    void rejectsTokenSignedWithTheOldSharedSecret() {
+        // HS256 com o antigo JWT_SECRET compartilhado: não é mais aceito.
+        String hs256 = io.jsonwebtoken.Jwts.builder().header().keyId(JwtIssuer.KEY_ID).and()
+                .subject("52998224725")
+                .expiration(new java.util.Date(System.currentTimeMillis() + 60_000))
+                .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(
+                        "test-secret-that-is-long-enough-for-hs256-signing!!".getBytes()))
+                .compact();
+
+        assertThatThrownBy(() -> invoke("Bearer " + hs256))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("Unauthorized");
     }

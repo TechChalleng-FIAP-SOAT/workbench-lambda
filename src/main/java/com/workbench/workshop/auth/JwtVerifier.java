@@ -2,32 +2,42 @@ package com.workbench.workshop.auth;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
+import io.jsonwebtoken.ProtectedHeader;
+import io.jsonwebtoken.UnsupportedJwtException;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
+import java.security.PublicKey;
 
 /**
- * Verifies JWTs signed by {@link JwtIssuer}.
- * Uses the same shared JWT_SECRET (HS256). Signature and expiration are checked
- * by the jjwt parser; an invalid or expired token throws {@link JwtException}.
+ * Verifies JWTs signed by {@link JwtIssuer} (RS256) with the platform PUBLIC key
+ * (JWT_PUBLIC_KEY): the authorizer cannot mint tokens. Only {@code kid} {@value JwtIssuer#KEY_ID}
+ * is accepted. Signature and expiration are checked by the jjwt parser; an invalid or expired
+ * token throws {@link JwtException}.
  */
 public class JwtVerifier {
 
-    private final SecretKey key;
+    private final JwtParser parser;
 
-    public JwtVerifier(String secret) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    public JwtVerifier(PublicKey key) {
+        this.parser = Jwts.parser()
+                .keyLocator(header -> {
+                    String kid = header instanceof ProtectedHeader protectedHeader ? protectedHeader.getKeyId() : null;
+                    if (!JwtIssuer.KEY_ID.equals(kid)) {
+                        throw new UnsupportedJwtException("Untrusted token key: kid=" + kid);
+                    }
+                    return key;
+                })
+                .build();
     }
 
-    /** Builds a verifier from the JWT_SECRET environment variable. */
+    /** Builds a verifier from the JWT_PUBLIC_KEY environment variable. */
     public static JwtVerifier fromEnv() {
-        String secret = System.getenv("JWT_SECRET");
-        if (secret == null || secret.isBlank()) {
-            throw new IllegalStateException("Missing required environment variable: JWT_SECRET");
+        String publicKey = System.getenv("JWT_PUBLIC_KEY");
+        if (publicKey == null || publicKey.isBlank()) {
+            throw new IllegalStateException("Missing required environment variable: JWT_PUBLIC_KEY");
         }
-        return new JwtVerifier(secret);
+        return new JwtVerifier(RsaKeys.publicKey(publicKey));
     }
 
     /**
@@ -36,10 +46,6 @@ public class JwtVerifier {
      * @throws JwtException when the signature is invalid or the token is expired/malformed
      */
     public Claims verify(String token) {
-        return Jwts.parser()
-                .verifyWith(key)
-                .build()
-                .parseSignedClaims(token)
-                .getPayload();
+        return parser.parseSignedClaims(token).getPayload();
     }
 }

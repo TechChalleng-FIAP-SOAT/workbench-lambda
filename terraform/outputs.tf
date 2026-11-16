@@ -10,6 +10,16 @@ output "issuer_invoke_arn" {
   value       = aws_lambda_function.issuer.invoke_arn
 }
 
+output "staff_issuer_function_name" {
+  description = "Name of the staff auth issuer Lambda (email/password login)."
+  value       = aws_lambda_function.staff_issuer.function_name
+}
+
+output "staff_issuer_invoke_arn" {
+  description = "Invoke ARN of the staff auth issuer Lambda (for API Gateway integration)."
+  value       = aws_lambda_function.staff_issuer.invoke_arn
+}
+
 output "authorizer_function_name" {
   description = "Name of the token authorizer Lambda."
   value       = aws_lambda_function.authorizer.function_name

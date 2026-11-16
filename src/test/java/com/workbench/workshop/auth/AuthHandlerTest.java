@@ -22,7 +22,7 @@ class AuthHandlerTest {
     @BeforeEach
     void setUp() {
         customerClient = mock(CustomerClient.class);
-        JwtIssuer issuer = new JwtIssuer("test-secret-that-is-long-enough-for-hs256-signing!!", 86_400_000L);
+        JwtIssuer issuer = new JwtIssuer(TestRsa.PLATFORM.getPrivate(), 86_400_000L);
         handler = new AuthHandler(customerClient, issuer);
     }
 
@@ -41,16 +41,18 @@ class AuthHandlerTest {
     }
 
     @Test
-    void returns404WhenClientNotFound() {
+    void unknownAndInactiveClientsGetTheSameAnswer() {
+        // A resposta não pode revelar se o CPF está cadastrado.
         when(customerClient.findByDocument(anyString())).thenReturn(Optional.empty());
-        assertThat(invoke("{\"cpf\":\"" + VALID_CPF + "\"}").getStatusCode()).isEqualTo(404);
-    }
+        var unknown = invoke("{\"cpf\":\"" + VALID_CPF + "\"}");
 
-    @Test
-    void returns403WhenClientInactive() {
         when(customerClient.findByDocument(VALID_CPF))
                 .thenReturn(Optional.of(new Client(1L, "JOAO", false)));
-        assertThat(invoke("{\"cpf\":\"" + VALID_CPF + "\"}").getStatusCode()).isEqualTo(403);
+        var inactive = invoke("{\"cpf\":\"" + VALID_CPF + "\"}");
+
+        assertThat(unknown.getStatusCode()).isEqualTo(401);
+        assertThat(inactive.getStatusCode()).isEqualTo(401);
+        assertThat(inactive.getBody()).isEqualTo(unknown.getBody());
     }
 
     @Test
