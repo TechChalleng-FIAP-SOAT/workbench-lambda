@@ -10,6 +10,8 @@ Challenge Fase 4). Microsserviço serverless que autentica **clientes (por CPF)*
 > `clients` direto no banco. Na Fase 4, com a refatoração em microsserviços e o
 > requisito de **isolamento de banco**, o issuer deixou de acessar banco e passou a
 > resolver o cliente **por REST no Customer Service** (`GET /api/clients/document/{cpf}`).
+> Essa rota exige JWT no Customer Service: a Lambda envia um **token de serviço** próprio
+> (`sub=workbench-lambda`, papel `TECHNICIAN`, 1 minuto), assinado com a mesma chave privada.
 > O token emitido (RS256, `kid=workbench-auth`) é verificado por **todos os microsserviços** com a chave pública (`JWT_PUBLIC_KEY`).
 
 This repository contains the AWS Lambda functions and the Terraform/CI‑CD needed to:

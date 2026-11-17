@@ -79,6 +79,28 @@ public class JwtIssuer {
                 .compact();
     }
 
+    /** Subject do token que a Lambda usa ao consultar o Customer Service. */
+    public static final String SERVICE_SUBJECT = "workbench-lambda";
+    /** Vida curta: o token só serve para a consulta que está sendo feita agora. */
+    static final long SERVICE_TOKEN_MILLIS = 60_000L;
+
+    /**
+     * Token de serviço para a Lambda consultar o cliente por CPF no Customer Service (a rota
+     * exige JWT). Papel TECHNICIAN, sem {@code clientId}: o mínimo que dá leitura de cadastro como
+     * staff. Vale 1 minuto e nunca sai da Lambda.
+     */
+    public String issueService() {
+        long now = System.currentTimeMillis();
+        return Jwts.builder()
+                .header().keyId(KEY_ID).and()
+                .subject(SERVICE_SUBJECT)
+                .claim("roles", List.of("TECHNICIAN"))
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + SERVICE_TOKEN_MILLIS))
+                .signWith(key)
+                .compact();
+    }
+
     public long getExpirationMillis() {
         return expirationMillis;
     }

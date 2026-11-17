@@ -8,6 +8,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Resolve o cliente pelo documento (CPF) chamando o <b>Customer Service</b> por REST,
@@ -24,29 +25,44 @@ public class CustomerClient {
 
     private final String baseUrl;
     private final HttpClient httpClient;
+    /** Token de serviço enviado na consulta por documento (a rota exige JWT no Customer Service). */
+    private final Supplier<String> serviceToken;
 
     public CustomerClient(String baseUrl) {
-        this(baseUrl, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build());
+        this(baseUrl, () -> null);
+    }
+
+    public CustomerClient(String baseUrl, Supplier<String> serviceToken) {
+        this(baseUrl, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build(), serviceToken);
     }
 
     CustomerClient(String baseUrl, HttpClient httpClient) {
-        this.baseUrl = stripTrailingSlash(baseUrl);
-        this.httpClient = httpClient;
+        this(baseUrl, httpClient, () -> null);
     }
 
-    /** Monta o cliente a partir das variáveis de ambiente. */
-    public static CustomerClient fromEnv() {
-        return new CustomerClient(requireEnv("CUSTOMER_SERVICE_URL"));
+    CustomerClient(String baseUrl, HttpClient httpClient, Supplier<String> serviceToken) {
+        this.baseUrl = stripTrailingSlash(baseUrl);
+        this.httpClient = httpClient;
+        this.serviceToken = serviceToken;
+    }
+
+    /** Monta o cliente a partir das variáveis de ambiente, assinando a consulta com o token de serviço. */
+    public static CustomerClient fromEnv(JwtIssuer issuer) {
+        return new CustomerClient(requireEnv("CUSTOMER_SERVICE_URL"), issuer::issueService);
     }
 
     /** Busca por documento (dígitos). Vazio em 404; exceção em falha de comunicação. */
     public Optional<Client> findByDocument(String documentDigits) {
-        HttpRequest request = HttpRequest.newBuilder()
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/api/clients/document/" + documentDigits))
                 .timeout(Duration.ofSeconds(5))
                 .header("Accept", "application/json")
-                .GET()
-                .build();
+                .GET();
+        String token = serviceToken.get();
+        if (token != null) {
+            builder.header("Authorization", "Bearer " + token);
+        }
+        HttpRequest request = builder.build();
         try {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             int status = response.statusCode();

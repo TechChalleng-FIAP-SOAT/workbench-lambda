@@ -31,7 +31,11 @@ public class AuthHandler implements RequestHandler<APIGatewayProxyRequestEvent, 
 
     /** Used by the Lambda runtime — wires dependencies from environment variables. */
     public AuthHandler() {
-        this(CustomerClient.fromEnv(), JwtIssuer.fromEnv());
+        this(JwtIssuer.fromEnv());
+    }
+
+    private AuthHandler(JwtIssuer issuer) {
+        this(CustomerClient.fromEnv(issuer), issuer);
     }
 
     /** Used by tests — dependencies injected. */
