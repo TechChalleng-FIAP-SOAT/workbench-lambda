@@ -3,6 +3,7 @@ package com.workbench.workshop.auth;
 import org.junit.jupiter.api.Test;
 
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Optional;
 
@@ -10,6 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.when;
 
 class CustomerClientTest {
@@ -64,5 +67,21 @@ class CustomerClientTest {
     void rejectsBlankBaseUrl() {
         assertThatThrownBy(() -> new CustomerClient(""))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void sendsServiceTokenOnDocumentLookup() throws Exception {
+        HttpClient http = mock(HttpClient.class);
+        HttpResponse<String> response = mock(HttpResponse.class);
+        when(response.statusCode()).thenReturn(404);
+        when(http.send(any(), any(HttpResponse.BodyHandler.class))).thenReturn(response);
+        CustomerClient client = new CustomerClient("http://customer-service:8080", http, () -> "svc-token");
+
+        client.findByDocument("52998224725");
+
+        verify(http).send(argThat((HttpRequest r) ->
+                r.headers().firstValue("Authorization").orElse("").equals("Bearer svc-token")),
+                any(HttpResponse.BodyHandler.class));
     }
 }

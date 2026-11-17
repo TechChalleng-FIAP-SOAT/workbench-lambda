@@ -32,7 +32,11 @@ public class StaffAuthHandler implements RequestHandler<APIGatewayProxyRequestEv
 
     /** Usado pelo runtime da Lambda. */
     public StaffAuthHandler() {
-        this(CustomerClient.fromEnv(), JwtIssuer.fromEnv());
+        this(JwtIssuer.fromEnv());
+    }
+
+    private StaffAuthHandler(JwtIssuer issuer) {
+        this(CustomerClient.fromEnv(issuer), issuer);
     }
 
     /** Usado pelos testes. */
